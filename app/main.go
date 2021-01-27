@@ -2,23 +2,56 @@ package main
 
 import (
 	"io"
+	models "main/app/models"
 	"net/http"
 	"os"
 	"strings"
 
-	"github.com/gin-gonic/gin"
 	"github.com/disintegration/imaging"
+	"github.com/gin-gonic/gin"
 	uuid "github.com/satori/go.uuid"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
 )
+
+var db *gorm.DB
+
 
 func main() {
 
+    //var err error
+	dsn := "wallche:wallchepass@tcp(db:3306)/wallche?charset=utf8mb4&parseTime=True&loc=Local"
+	localDb, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+    //defer localDb.Close()
+    db = localDb
+
+    println(err)
+
+
+	if err != nil {
+		panic(err)
+	}
+
+	// Migrate the schema
+	db.AutoMigrate(&models.Wallpaper{})
+
 	app := gin.Default()
 	app.Static("/img", "./download")
-	app.GET("/get", func(ctx *gin.Context) {
+	app.GET("/get", getWallpaper)
 
-        url := ctx.Request.URL.Query().Get("url");
+	app.Run(":80") // listen and serve on 0.0.0.0:8080
+}
 
+func getWallpaper(ctx *gin.Context) {
+
+	url := ctx.Request.URL.Query().Get("url")
+
+	var wallpaper models.Wallpaper
+	var fullpath = ""
+	thumbPath := ""
+
+	db.Where("url = ?", url).First(&wallpaper)
+	if wallpaper.ID == 0 {
 
 		fullpath, err := DownloadFile("./download", url)
 
@@ -28,12 +61,18 @@ func main() {
 
 		thumbPath := ResizeImage(fullpath)
 
-		ctx.JSON(200, gin.H{
-			"full":  "/img" + fullpath[strings.LastIndex(fullpath, "/"):],
-			"thumb": "/img" + thumbPath[strings.LastIndex(thumbPath, "/"):],
-		})
+		wallpaper := models.Wallpaper{Url: url, Path: fullpath, ThumbPath: thumbPath}
+
+		db.Create(&wallpaper)
+	} else {
+		fullpath = wallpaper.Path
+		thumbPath = wallpaper.ThumbPath
+	}
+
+	ctx.JSON(200, gin.H{
+		"full":  "/img" + fullpath[strings.LastIndex(fullpath, "/"):],
+		"thumb": "/img" + thumbPath[strings.LastIndex(thumbPath, "/"):],
 	})
-	app.Run(":80") // listen and serve on 0.0.0.0:8080
 }
 
 func ResizeImage(path string) string {
