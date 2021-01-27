@@ -1,1 +1,6 @@
-download
+download/*
+!download/.gitkeep
+.idea
+/docker/db/data
+!/docker/db/data/.gitkeep
+/tmp/
